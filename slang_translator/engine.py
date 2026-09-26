@@ -42,15 +42,25 @@ class SlangEngine:
 
         last_error = None
         loaded = False
+        candidates = []
         for repo in (adapter, ADAPTER_REPO, ADAPTER_FALLBACK):
             if not repo:
                 continue
+            candidates.append((repo, None))
+            candidates.append((repo, "final_checkpoint"))
+        seen = set()
+        for repo, subfolder in candidates:
+            key = (repo, subfolder)
+            if key in seen:
+                continue
+            seen.add(key)
             try:
-                self.model = PeftModel.from_pretrained(self.model, repo)
+                kwargs = {"subfolder": subfolder} if subfolder else {}
+                self.model = PeftModel.from_pretrained(self.model, repo, **kwargs)
                 loaded = True
-                self.adapter_id = repo
+                self.adapter_id = f"{repo}/{subfolder}" if subfolder else repo
                 break
-            except Exception as exc:  # noqa: BLE001 — try the next id
+            except Exception as exc:  # noqa: BLE001 — try the next location
                 last_error = exc
         if require_adapter and not loaded:
             raise RuntimeError(f"Could not load LoRA adapter. Last error: {last_error}")
