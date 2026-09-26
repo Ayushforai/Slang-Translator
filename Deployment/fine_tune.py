@@ -4,6 +4,10 @@ import os
 import sys
 from pathlib import Path
 
+# Kaggle "T4 x2" exposes two GPUs; device_map="auto" shards the model and Trainer crashes with
+# "found one of them on device: cuda:1". QLoRA on 1B only needs one GPU.
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
@@ -33,7 +37,10 @@ def main():
         raise SystemExit("Missing Dataa/train.jsonl. Run: python -m slang_translator.cli prepare")
 
     use_gpu = torch.cuda.is_available()
-    print(f"GPU available: {use_gpu}")
+    if use_gpu:
+        print(f"GPU available: {torch.cuda.get_device_name(0)} (using cuda:0 only)")
+    else:
+        print("GPU available: False")
 
     bnb_config = None
     if use_gpu:
@@ -61,7 +68,7 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         quantization_config=bnb_config,
-        device_map="auto" if use_gpu else None,
+        device_map={"": 0} if use_gpu else None,
         token=hf_token,
         torch_dtype=torch.bfloat16 if use_gpu else torch.float32,
     )

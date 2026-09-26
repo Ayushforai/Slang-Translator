@@ -24,6 +24,85 @@ Adapter: [ayushforai/slang-translator-llama-1b](https://huggingface.co/ayushfora
 5. Inference uses the chat template. If the model copies the input, a **lexical slang fallback** still shifts register.
 6. Optional **TF-IDF + logistic regression** formality detector (routing for a future two-way model; the product always rewrites **toward slang**).
 
+## Training (`Deployment/fine_tune.py`)
+
+Training is **supervised fine-tuning (SFT)** with **QLoRA** on a frozen, 4-bit-quantized Llama 3.2 1B base. Only LoRA adapter weights are updated (~**11.27M** parameters, ~**0.9%** of the full model).
+
+### Inputs and outputs
+
+| Item | Path / value |
+|---|---|
+| Train split | `Dataa/train.jsonl` (field `text`: full Llama chat prompt + target slang) |
+| Validation split | `Dataa/val.jsonl` (same format; used if present) |
+| Base model | `meta-llama/Llama-3.2-1B-Instruct` (gated; needs `HUGGINGFACE_HUB_TOKEN`) |
+| Checkpoints | `models/slang_translator_llama_1b/checkpoint-*` (every 100 steps) |
+| Final adapter | `models/slang_translator_llama_1b/final_checkpoint/` |
+
+Run after `python -m slang_translator.cli prepare`:
+
+```bash
+set HUGGINGFACE_HUB_TOKEN=...   # Windows
+python Deployment/fine_tune.py
+```
+
+Recommended: **one GPU** with CUDA (Kaggle T4, Colab T4). CPU training is possible but very slow. On Kaggle **T4 x2**, the script pins **`CUDA_VISIBLE_DEVICES=0`** and uses `device_map={"": 0}` so the model stays on a single GPU (multi-GPU + `device_map="auto"` breaks the Trainer).
+
+### QLoRA and LoRA settings
+
+- **Quantization (GPU only):** 4-bit **NF4**, `bnb_4bit_compute_dtype=bfloat16`, double quant enabled.
+- **LoRA:** `r=16`, `lora_alpha=32`, `lora_dropout=0.05`, `bias="none"`.
+- **Target modules:** `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`.
+- **Optimizer:** `paged_adamw_32bit` on GPU; `adamw_torch` on CPU.
+- **Precision:** `bf16` when the GPU supports it; no fp16.
+
+### Hyperparameters
+
+| Setting | GPU | CPU |
+|---|---|---|
+| Epochs | 3 | 3 |
+| `per_device_train_batch_size` | 4 | 1 |
+| `per_device_eval_batch_size` | 4 | 1 |
+| `gradient_accumulation_steps` | 2 | 2 |
+| **Effective batch size** | **8** | **2** |
+| Learning rate | `2e-4` | `2e-4` |
+| LR schedule | cosine | cosine |
+| Warmup | 3% of steps (`warmup_ratio=0.03`) | same |
+| Weight decay | 0.01 | 0.01 |
+| Max grad norm | 0.3 | 0.3 |
+
+**Approximate steps per run** (with validation file present):
+
+\[
+\text{steps} = \left\lceil \frac{N_{\text{train}} \times \text{epochs}}{\text{batch} \times \text{grad\_accum}} \right\rceil
+\]
+
+Example: ~1,879 train rows → about **705** steps on GPU (3 epochs, effective batch 8). Step count changes if you re-run `prepare` and the train size changes.
+
+### What gets logged during training
+
+Hugging Face `Trainer` + TRL `SFTTrainer` write to the console (and to `trainer_state.json` inside each checkpoint folder). **`report_to="none"`** — no Weights & Biases unless you change it.
+
+| Interval | What you see |
+|---|---|
+| **Every 10 steps** (`logging_steps=10`) | **`loss`** (train cross-entropy), **`mean_token_accuracy`**, **`learning_rate`**, **`epoch`**, and often **`entropy`** / **`grad_norm`** in the log history |
+| **Every 100 steps** (`eval_steps=100`) | **`eval_loss`** on `Dataa/val.jsonl` (validation cross-entropy) |
+| **Every 100 steps** (`save_steps=100`) | Checkpoint under `models/slang_translator_llama_1b/checkpoint-<step>/` |
+
+After training completes, the best checkpoint (lowest **`eval_loss`**) is restored when validation is enabled (`load_best_model_at_end=True`, `metric_for_best_model="eval_loss"`), then weights are saved again to **`final_checkpoint/`**.
+
+### Interpreting metrics
+
+- **`loss` / `eval_loss`:** Next-token prediction error on the formatted SFT strings. Lower is better. **`eval_loss`** is the honest generalization signal on the held-out val split; do not confuse train **`loss`** with test BLEU.
+- **`mean_token_accuracy`:** Fraction of tokens where the model’s argmax matches the label (mostly on the training batch). High values late in training are normal; they do not prove slang quality on new sentences.
+- **Checkpoints:** Use `final_checkpoint` for inference, or upload that folder to Hugging Face. Intermediate `checkpoint-*` dirs are useful if the session dies before the last step.
+
+### Cloud training (Kaggle / Colab)
+
+1. Enable **GPU** and **Internet**.
+2. Store **`HUGGINGFACE_HUB_TOKEN`** in notebook secrets.
+3. Clone this repo, `pip install transformers peft trl datasets accelerate bitsandbytes huggingface_hub`.
+4. `python Deployment/fine_tune.py` — expect on the order of **20–60 minutes** on a T4 for ~700 steps.
+
 ## Honest metrics (from the published adapter run)
 
 Logged in `checkpoint-2106/trainer_state.json` (train set, not a test BLEU):
@@ -56,12 +135,7 @@ python -m slang_translator.cli prepare
 python -m slang_translator.cli train-detector
 ```
 
-Train (needs a Hugging Face token for Llama 3.2 and a GPU for QLoRA):
-
-```bash
-set HUGGINGFACE_HUB_TOKEN=...
-python Deployment/fine_tune.py
-```
+Train: see **[Training](#training-deploymentfine_tunepy)** above (`Deployment/fine_tune.py`).
 
 Run the app:
 
