@@ -24,8 +24,13 @@ class SlangEngine:
 
         load_env()
         token = os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
+        # Do not call huggingface_hub.login() here: an expired Space secret raises
+        # 401 on whoami and aborts before weights load. Pass token= instead.
         if token:
-            login(token=token, add_to_git_credential=False)
+            try:
+                login(token=token, add_to_git_credential=False)
+            except Exception:
+                pass
 
         self.tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, token=token)
         if self.tokenizer.pad_token is None:

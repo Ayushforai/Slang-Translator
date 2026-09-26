@@ -40,7 +40,10 @@ def get_engine():
             logger.info("Loaded adapter %s", _engine.adapter_id)
         except Exception as exc:  # noqa: BLE001
             _engine_error = str(exc)
-            _llm_disabled = True
+            # Auth/config errors will not recover without a restart; OOM/timeout may.
+            msg = str(exc).lower()
+            permanent = any(s in msg for s in ("401", "gated", "invalid user token", "unauthorized"))
+            _llm_disabled = permanent
             logger.exception("Model failed to load")
             raise
     return _engine

@@ -87,7 +87,22 @@ SLANG_MARKERS = (
     "gonna",
 )
 
+# Longer phrases first. These run even when the LLM is down.
 LEXICAL_SLANG = (
+    (r"\blet['’]?s go to that place\b", "let's bounce to that spot"),
+    (r"\blet us go to that place\b", "let's bounce to that spot"),
+    (r"\blet['’]?s go to\b", "let's bounce to"),
+    (r"\blet us go to\b", "let's bounce to"),
+    (r"\blet['’]?s go\b", "let's bounce"),
+    (r"\blet us go\b", "let's bounce"),
+    (r"\bgo to that place\b", "hit that spot"),
+    (r"\bthat place\b", "that spot"),
+    (r"\bI would like to request your assistance\b", "I need you to come thru"),
+    (r"\brequest your assistance\b", "need your help"),
+    (r"\bthank you for your help\b", "thanks for coming thru"),
+    (r"\bcould you please clarify this point\b", "can you break this down"),
+    (r"\bplease wait a moment\b", "hang on a sec"),
+    (r"\bwait a moment\b", "hang on a sec"),
     (r"\bgoing to\b", "gonna"),
     (r"\bwant to\b", "wanna"),
     (r"\bhave to\b", "gotta"),
@@ -132,6 +147,8 @@ INFORMAL_BOOST = (
     (r"\bthank you for your help\b", "thanks for the help"),
     (r"\bI would like to\b", "I wanna"),
     (r"\bplease\b", ""),
+    (r"\bgo to\b", "hit"),
+    (r"\bplace\b", "spot"),
 )
 
 # Outputs below this heuristic score are pushed harder toward slang.

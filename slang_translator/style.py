@@ -73,22 +73,29 @@ def informal_boost(text: str) -> str:
     return lexical_slangify(out)
 
 
+def _normalize(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
 def enforce_slang(source: str, hypothesis: str) -> str:
     hyp = (hypothesis or "").strip()
-    candidates: list[str] = []
-    if hyp and not too_similar(source, hyp):
-        candidates.append(hyp)
+    from_source = informal_boost(lexical_slangify(source))
+    candidates: list[str] = [from_source]
     if hyp:
-        candidates.append(lexical_slangify(hyp))
-    candidates.append(lexical_slangify(source))
-    candidates.append(informal_boost(hyp or source))
+        from_hyp = informal_boost(lexical_slangify(hyp))
+        if _normalize(from_hyp) != _normalize(source):
+            candidates.append(from_hyp)
+        if not too_similar(source, hyp):
+            candidates.append(hyp)
 
-    best = max(candidates, key=lambda t: (slang_score(t), len(t)))
-    if slang_score(best) < MIN_SLANG_SCORE:
-        boosted = informal_boost(best)
-        if slang_score(boosted) >= slang_score(best):
-            best = boosted
-    return best or lexical_slangify(source)
+    def rank(text: str) -> tuple:
+        changed = int(_normalize(text) != _normalize(source))
+        return (changed, slang_score(text))
+
+    best = max(candidates, key=rank)
+    if _normalize(best) == _normalize(source):
+        best = from_source
+    return best or from_source
 
 
 def build_messages(text: str, reverse: bool = False, target: Optional[str] = None) -> list[dict]:
