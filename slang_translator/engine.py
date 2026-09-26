@@ -31,14 +31,24 @@ class SlangEngine:
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        self.model = AutoModelForCausalLM.from_pretrained(
-            BASE_MODEL,
-            token=token,
-            torch_dtype=dtype,
-            device_map="auto",
-            low_cpu_mem_usage=True,
-        )
+        use_cuda = torch.cuda.is_available()
+        dtype = torch.float16 if use_cuda else torch.float32
+        load_kwargs = {
+            "token": token,
+            "torch_dtype": dtype,
+        }
+        if use_cuda:
+            load_kwargs["device_map"] = "auto"
+            load_kwargs["low_cpu_mem_usage"] = True
+        else:
+            # "auto" + low_cpu_mem_usage offloads layers to disk/meta on RAM-limited laptops
+            # and breaks LoRA / generation; keep the full 1B model on CPU instead.
+            load_kwargs["device_map"] = None
+            load_kwargs["low_cpu_mem_usage"] = False
+
+        self.model = AutoModelForCausalLM.from_pretrained(BASE_MODEL, **load_kwargs)
+        if not use_cuda:
+            self.model = self.model.to("cpu")
 
         last_error = None
         loaded = False
@@ -81,7 +91,8 @@ class SlangEngine:
             prompt = render_llama_prompt(text, reverse=reverse)
 
         inputs = tokenizer(prompt, return_tensors="pt")
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        device = next(self.model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         with torch.no_grad():
             out = self.model.generate(
                 **inputs,

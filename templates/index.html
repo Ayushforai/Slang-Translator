@@ -214,7 +214,9 @@
 
                 if (data.success) {
                     const bits = [];
-                    if (data.detected_register) bits.push('detected: ' + data.detected_register);
+                    if (data.output_register) bits.push('output: ' + data.output_register);
+                    else if (data.detected_register) bits.push('input: ' + data.detected_register);
+                    if (data.mode) bits.push('via ' + data.mode);
                     if (data.note) bits.push(data.note);
                     showResult(data.informal, bits.join(' · '));
                 } else {

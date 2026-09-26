@@ -1,7 +1,16 @@
 import re
 from typing import Optional
 
-from .config import LEXICAL_SLANG, SLANG_MARKERS, SYSTEM_PROMPT, SYSTEM_PROMPT_REVERSE, USER_TEMPLATE, USER_TEMPLATE_REVERSE
+from .config import (
+    INFORMAL_BOOST,
+    LEXICAL_SLANG,
+    MIN_SLANG_SCORE,
+    SLANG_MARKERS,
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_REVERSE,
+    USER_TEMPLATE,
+    USER_TEMPLATE_REVERSE,
+)
 
 
 _CONTRACTION = re.compile(r"\b\w+n't\b|\b(?:i'm|you're|we're|they're|it's|that's|what's|who's|let's|y'all)\b", re.I)
@@ -55,13 +64,31 @@ def lexical_slangify(text: str) -> str:
     return out
 
 
+def informal_boost(text: str) -> str:
+    """Second pass for model outputs that are casual but still read as formal."""
+    out = text.strip()
+    for pattern, repl in INFORMAL_BOOST:
+        out = re.sub(pattern, repl, out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+", " ", out).strip()
+    return lexical_slangify(out)
+
+
 def enforce_slang(source: str, hypothesis: str) -> str:
     hyp = (hypothesis or "").strip()
-    if too_similar(source, hyp) or slang_score(hyp) < slang_score(source):
-        boosted = lexical_slangify(source if too_similar(source, hyp) else hyp)
-        if slang_score(boosted) >= slang_score(hyp):
-            return boosted
-    return hyp or lexical_slangify(source)
+    candidates: list[str] = []
+    if hyp and not too_similar(source, hyp):
+        candidates.append(hyp)
+    if hyp:
+        candidates.append(lexical_slangify(hyp))
+    candidates.append(lexical_slangify(source))
+    candidates.append(informal_boost(hyp or source))
+
+    best = max(candidates, key=lambda t: (slang_score(t), len(t)))
+    if slang_score(best) < MIN_SLANG_SCORE:
+        boosted = informal_boost(best)
+        if slang_score(boosted) >= slang_score(best):
+            best = boosted
+    return best or lexical_slangify(source)
 
 
 def build_messages(text: str, reverse: bool = False, target: Optional[str] = None) -> list[dict]:

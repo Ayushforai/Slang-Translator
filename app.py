@@ -73,12 +73,24 @@ def translate_api():
     style = _detector.predict(text)
     already_informal = style["label"] == "informal" and style["informal_prob"] >= 0.65
 
+    mode = "llm"
     try:
         engine = get_engine()
         slang_text = engine.generate(text)
     except Exception:
         logger.warning("LLM unavailable, using lexical slang fallback")
+        mode = "lexical"
         slang_text = enforce_slang(text, text)
+
+    out_style = _detector.predict(slang_text)
+    note = None
+    if already_informal:
+        note = "Input already looks informal; rewritten anyway toward slang."
+    elif out_style["label"] == "formal" and slang_score(slang_text) < 0.12:
+        note = (
+            "Output still reads formal — training data uses mild casual English, not heavy Gen-Z slang. "
+            "Retrain with stronger slang labels or use a GPU host for full model quality."
+        )
 
     return jsonify(
         {
@@ -87,10 +99,10 @@ def translate_api():
             "source_slang_score": slang_score(text),
             "output_slang_score": slang_score(slang_text),
             "detected_register": style["label"],
+            "output_register": out_style["label"],
+            "mode": mode,
             "already_informal": already_informal,
-            "note": "Input already looks informal; rewritten anyway toward slang."
-            if already_informal
-            else None,
+            "note": note,
         }
     )
 

@@ -118,3 +118,21 @@ LEXICAL_SLANG = (
     (r"\bI am sorry\b", "my bad"),
     (r"\bI'm sorry\b", "my bad"),
 )
+
+# Extra pass when the model still sounds formal (applied after LEXICAL_SLANG).
+INFORMAL_BOOST = (
+    (r"\bclarify this point\b", "break this down"),
+    (r"\bclarify\b", "spell out"),
+    (r"\bexplain this\b", "break this down"),
+    (r"\bexplain that\b", "break that down"),
+    (r"\brequest your assistance\b", "need your help"),
+    (r"\bassistance\b", "help"),
+    (r"\bwait a moment\b", "hang on a sec"),
+    (r"\ba moment\b", "a sec"),
+    (r"\bthank you for your help\b", "thanks for the help"),
+    (r"\bI would like to\b", "I wanna"),
+    (r"\bplease\b", ""),
+)
+
+# Outputs below this heuristic score are pushed harder toward slang.
+MIN_SLANG_SCORE = 0.06
