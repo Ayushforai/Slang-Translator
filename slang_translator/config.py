@@ -10,6 +10,8 @@ GENZ_CSVS = (
     GENZ_DIR / "genz_dataset.csv",
     GENZ_DIR / "gen_z_slangs_translation.csv",
 )
+# Outputs of prepare — must not be fed back in as training sources.
+EXCLUDED_DATA_CSV_NAMES = frozenset({"cleaned_data.csv", "test.csv"})
 CLEANED_CSV = DATA_DIR / "cleaned_data.csv"
 TRAIN_JSONL = DATA_DIR / "train.jsonl"
 VAL_JSONL = DATA_DIR / "val.jsonl"

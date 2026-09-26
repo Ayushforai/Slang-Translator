@@ -1,4 +1,6 @@
 import re
+import warnings
+from pathlib import Path
 
 import pandas as pd
 
@@ -45,14 +47,43 @@ def load_parallel(path) -> pd.DataFrame:
     return out
 
 
-def load_all_training_pairs() -> pd.DataFrame:
-    """Office-casual pairs plus any Gen-Z CSVs under Dataa/genz/."""
-    from .config import GENZ_CSVS, RAW_CSV
+def iter_data_csv_paths() -> list[Path]:
+    """All parallel-pair CSVs under Dataa/, excluding generated splits."""
+    from .config import DATA_DIR, EXCLUDED_DATA_CSV_NAMES, GENZ_CSVS, RAW_CSV
 
-    frames = [load_parallel(RAW_CSV)]
-    for path in GENZ_CSVS:
-        if path.is_file():
+    ordered: list[Path] = []
+    seen: set[Path] = set()
+    for path in (RAW_CSV, *GENZ_CSVS):
+        if not path.is_file():
+            continue
+        key = path.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(path)
+    for path in sorted(DATA_DIR.rglob("*.csv")):
+        if path.name in EXCLUDED_DATA_CSV_NAMES:
+            continue
+        key = path.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(path)
+    return ordered
+
+
+def load_all_training_pairs() -> pd.DataFrame:
+    """Merge every formal/slang CSV under Dataa/ (see iter_data_csv_paths)."""
+    frames: list[pd.DataFrame] = []
+    for path in iter_data_csv_paths():
+        try:
             frames.append(load_parallel(path))
+        except ValueError as exc:
+            warnings.warn(f"Skipping {path}: {exc}", stacklevel=1)
+    if not frames:
+        raise FileNotFoundError(
+            "No training CSVs found under Dataa/. Add pair files with formal/slang columns."
+        )
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(subset=["formal", "slang"]).reset_index(drop=True)
 
