@@ -16,6 +16,7 @@ VAL_JSONL = DATA_DIR / "val.jsonl"
 TEST_CSV = DATA_DIR / "test.csv"
 FORMATTED_JSONL = DATA_DIR / "formatted_dataset.jsonl"
 DETECTOR_PATH = DATA_DIR / "formality_detector.joblib"
+FALLBACK_JSONL = DATA_DIR / "fallback_pairs.jsonl"
 
 BASE_MODEL = "meta-llama/Llama-3.2-1B-Instruct"
 ADAPTER_REPO = "ayushforai/slang-translator-llama-1b"

@@ -112,4 +112,12 @@ class SlangEngine:
         hyp = extract_assistant(decoded)
         if reverse:
             return hyp
-        return enforce_slang(text, hyp)
+        from .retrieval import fallback_rewrite
+        from .style import too_similar
+
+        polished = enforce_slang(text, hyp)
+        if too_similar(text, polished):
+            fb = fallback_rewrite(text)
+            if fb["mode"] == "corpus":
+                return fb["text"]
+        return polished

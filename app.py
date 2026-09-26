@@ -6,7 +6,8 @@ from flask import Flask, jsonify, render_template, request
 
 from slang_translator.detector import FormalityDetector
 from slang_translator.env import load_env
-from slang_translator.style import enforce_slang, slang_score
+from slang_translator.retrieval import fallback_rewrite
+from slang_translator.style import slang_score
 
 load_env()
 
@@ -77,13 +78,16 @@ def translate_api():
     already_informal = style["label"] == "informal" and style["informal_prob"] >= 0.65
 
     mode = "llm"
+    corpus_score = None
     try:
         engine = get_engine()
         slang_text = engine.generate(text)
     except Exception:
-        logger.warning("LLM unavailable, using lexical slang fallback")
-        mode = "lexical"
-        slang_text = enforce_slang(text, text)
+        logger.warning("LLM unavailable, using CSV retrieval / lexical fallback")
+        fb = fallback_rewrite(text)
+        slang_text = fb["text"]
+        mode = fb["mode"]
+        corpus_score = fb["corpus_score"]
 
     out_style = _detector.predict(slang_text)
     note = None
@@ -104,6 +108,7 @@ def translate_api():
             "detected_register": style["label"],
             "output_register": out_style["label"],
             "mode": mode,
+            "corpus_score": corpus_score,
             "already_informal": already_informal,
             "note": note,
         }

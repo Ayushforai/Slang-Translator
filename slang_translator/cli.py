@@ -11,12 +11,14 @@ from .config import CLEANED_CSV, TEST_CSV
 from .detector import FormalityDetector, train_detector
 from .format import build_splits
 from .metrics import corpus_bleu, sentence_bleu
-from .preprocess import load_all_training_pairs
+from .preprocess import load_all_training_pairs, load_parallel
+from .retrieval import write_fallback_jsonl
 from .style import enforce_slang, slang_score
 
 
 def cmd_prepare(_args) -> None:
     stats = build_splits()
+    stats["fallback_pairs"] = write_fallback_jsonl()
     print(json.dumps(stats, indent=2))
 
 
@@ -59,7 +61,7 @@ def cmd_detect_text(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Formal → slang project tools")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("prepare", help="Clean data, Llama prompts, train/val/test splits")
+    sub.add_parser("prepare", help="Clean data, Llama prompts, train/val/test splits, fallback JSONL")
     sub.add_parser("train-detector", help="Fit TF-IDF formality classifier")
     sub.add_parser("eval-baselines", help="BLEU / slang-score bounds on the test split")
     detect = sub.add_parser("detect", help="Classify one sentence as formal or informal")

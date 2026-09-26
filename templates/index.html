@@ -217,6 +217,7 @@
                     if (data.output_register) bits.push('output: ' + data.output_register);
                     else if (data.detected_register) bits.push('input: ' + data.detected_register);
                     if (data.mode) bits.push('via ' + data.mode);
+                    if (data.corpus_score != null) bits.push('match ' + Number(data.corpus_score).toFixed(2));
                     if (data.note) bits.push(data.note);
                     showResult(data.informal, bits.join(' · '));
                 } else {
