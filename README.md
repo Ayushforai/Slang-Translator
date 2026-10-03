@@ -163,9 +163,3 @@ To auto-detect register and convert **both** ways you would need:
 4. **Separate eval:** BLEU in the formal direction is meaningful; BLEU in the slang direction under-rewards valid slang that differs from the one reference.
 
 Limitations: slang is many dialects; a wrong route makes text worse; reversing slang throws away tone; detectors trained on this CSV learn “corporate vs slightly casual,” not Twitter/Gen-Z.
-
-## CV bullets you can defend
-
-- Fine-tuned Llama 3.2 1B Instruct with QLoRA (rank 16, 11.3M trainable weights) for **formal → slang** rewriting.
-- Train loss 4.75 → 0.267 (−94.4%) and entropy 2.80 → 0.273 over 2,106 steps; 89.5% train token accuracy (report as **training** dynamics).
-- Flask + HTML/CSS app on Hugging Face Spaces; train/val/test split and BLEU/slang-score eval script.
