@@ -1,6 +1,4 @@
-# Formal → Slang Rewriter
-
-## Formal to Slang Translator 🗨️
+# Formal to Slang Translator 🗨️
 
 This project rewrites **standard or formal English into modern slang**, basically changing the style transfer of a text. It combines a **QLoRA–fine-tuned Llama 3.2 1B Instruct** adapter with a **Flask** web UI, optional **formality detection**, and **fallback** paths (CSV nearest-neighbor + lexical rules) when the LLM cannot load or copies the input.
 
