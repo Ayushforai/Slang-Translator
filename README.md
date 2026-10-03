@@ -35,6 +35,12 @@ This project rewrites **standard or formal English into modern slang**, basicall
 - Run the same flow **locally** (with a valid HF token and enough RAM/CPU or GPU).
 - (Developers) **Prepare data**, **train** the adapter on GPU, **evaluate** baselines, and **deploy** via Docker to Spaces.
 
+## Live demo video ⏯️
+
+<!-- Add your demo link or embed here -->
+
+_TODO: link to screen recording (local use + Hugging Face Space)._
+
 ## How to run the project 📲
 
 1. **Clone** the repo and create a virtual environment.
@@ -78,12 +84,6 @@ python Deployment/fine_tune.py
 ```
 
 See [Training](#training-deploymentfine_tunepy) for Kaggle/Colab notes.
-
-## Live demo video ⏯️
-
-<!-- Add your demo link or embed here -->
-
-_TODO: link to screen recording (local use + Hugging Face Space)._
 
 ## Keyboard shortcuts ⌨️
 
