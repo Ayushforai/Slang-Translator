@@ -1,23 +1,13 @@
----
-title: Formal to Slang
-emoji: 🗣️
-colorFrom: purple
-colorTo: indigo
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Formal → Slang Rewriter
 
-## Short intro
+## Formal to Slang Translator 🗨️
 
-This project rewrites **standard or formal English into modern slang** (one direction only: formal → slang, not the reverse). It combines a **QLoRA–fine-tuned Llama 3.2 1B Instruct** adapter with a **Flask** web UI, optional **formality detection**, and **fallback** paths (CSV nearest-neighbor + lexical rules) when the LLM cannot load or copies the input.
+This project rewrites **standard or formal English into modern slang**, basically changing the style transfer of a text. It combines a **QLoRA–fine-tuned Llama 3.2 1B Instruct** adapter with a **Flask** web UI, optional **formality detection**, and **fallback** paths (CSV nearest-neighbor + lexical rules) when the LLM cannot load or copies the input.
 
 **Live app:** [ayushforai/slang-translator-web](https://huggingface.co/spaces/ayushforai/slang-translator-web)  
 **Adapter on Hugging Face:** [ayushforai/slang-translator-llama-1b](https://huggingface.co/ayushforai/slang-translator-llama-1b)
 
-## Technologies used
+## Technologies used 💻
 
 | Area | Stack |
 |------|--------|
@@ -29,7 +19,7 @@ This project rewrites **standard or formal English into modern slang** (one dire
 | **Eval** | Custom BLEU / slang-score / copy-rate scripts |
 | **Auth / Hub** | `huggingface_hub`, `python-dotenv` (`HUGGINGFACE_HUB_TOKEN` for gated Llama) |
 
-## Features
+## Features ✨
 
 - **Instruction-tuned rewriting** via Llama 3.2 chat template (`Rewrite this in slang:`).
 - **LoRA adapter** (~11.27M trainable weights, ~0.91% of base) hosted on the Hub.
@@ -39,7 +29,7 @@ This project rewrites **standard or formal English into modern slang** (one dire
 - **CLI:** `prepare`, `train-detector`, `eval-baselines`, `detect`.
 - **Health endpoint** (`/health`) for Space and local checks.
 
-## What users can do
+## What users can do 👥
 
 - Type or paste **formal or neutral** sentences and get a **slang/casual rewrite**.
 - Click **example phrases** in the UI to try common inputs.
@@ -47,7 +37,7 @@ This project rewrites **standard or formal English into modern slang** (one dire
 - Run the same flow **locally** (with a valid HF token and enough RAM/CPU or GPU).
 - (Developers) **Prepare data**, **train** the adapter on GPU, **evaluate** baselines, and **deploy** via Docker to Spaces.
 
-## How to run the project
+## How to run the project 📲
 
 1. **Clone** the repo and create a virtual environment.
 
@@ -91,20 +81,20 @@ python Deployment/fine_tune.py
 
 See [Training](#training-deploymentfine_tunepy) for Kaggle/Colab notes.
 
-## Live demo video
+## Live demo video ⏯️
 
 <!-- Add your demo link or embed here -->
 
 _TODO: link to screen recording (local use + Hugging Face Space)._
 
-## Keyboard shortcuts
+## Keyboard shortcuts ⌨️
 
 | Action | Shortcut |
 |--------|----------|
 | **Translate** | `Enter` (with focus in the text area) |
 | **New line in input** | `Shift` + `Enter` |
 
-## The process
+## The process 🔀
 
 1. **Data:** Merge `raw_data_fixed.csv` and Gen-Z CSVs under `Dataa/genz/` into cleaned parallel **formal ↔ slang** pairs (~2.5k unique rows).
 2. **Cleaning:** Light normalization that **preserves contractions and slang** on the target side.
@@ -113,7 +103,7 @@ _TODO: link to screen recording (local use + Hugging Face Space)._
 5. **Inference:** Load base + adapter; generate with chat template; **enforce_slang** + corpus retrieval if output is too close to the input.
 6. **Deploy:** Docker image on Hugging Face Spaces; `HUGGINGFACE_HUB_TOKEN` as a Space secret.
 
-## What I learned
+## What I learned 🧠
 
 - **Parameter-efficient fine-tuning** (QLoRA) makes a 1B instruct model usable on consumer GPUs without full-weight updates.
 - **Training loss and token accuracy** can look strong while **test BLEU** and human “slanginess” lag—evaluation must be split by metric type.
@@ -121,13 +111,13 @@ _TODO: link to screen recording (local use + Hugging Face Space)._
 - **Dataset labels** matter: many pairs are “corporate → casual,” not Gen-Z; the model and metrics reflect that ceiling.
 - **Production-minded inference:** lazy model load, CPU-safe `device_map`, and CSV/rule fallbacks keep the demo usable when the LLM fails.
 
-## Overall growth
+## Overall growth 📈
 
 - End-to-end ownership: **data pipeline → training → eval → Flask UI → Hub adapter → Spaces deploy**.
 - Practiced **honest reporting** (identity BLEU floor, non-LLM fallback BLEU, training vs test metrics).
 - Improved **debugging** across local CPU limits, multi-GPU training pitfalls, and remote runtime logs.
 
-## How can it be improved
+## How can it be improved 🛠️
 
 - **Richer slang targets** in training data (more Gen-Z, fewer mild paraphrases); retrain and re-evaluate.
 - **GPU Space or Inference Endpoint** for reliable `via llm` latency and fewer OOMs on free CPU.
@@ -136,7 +126,7 @@ _TODO: link to screen recording (local use + Hugging Face Space)._
 - **Optional bidirectional** mode (slang → formal) with a router and reversed pairs—see [Bidirectional (formal ↔ slang)](#bidirectional-formal--slang--not-in-this-product).
 - **Sync Space with GitHub** or a one-command deploy script to avoid manual `hf upload`.
 
-## Evaluation metrics
+## Evaluation metrics 🔢
 
 ### Training dynamics (published adapter run, train split — not test BLEU)
 
