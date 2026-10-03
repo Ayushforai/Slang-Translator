@@ -10,19 +10,167 @@ pinned: false
 
 # Formal → Slang Rewriter
 
-Rewrites **standard / formal English into modern slang**. It does **not** translate slang into formal English.
+## Short intro
 
-Live space: [ayushforai/slang-translator-web](https://huggingface.co/spaces/ayushforai/slang-translator-web)  
-Adapter: [ayushforai/slang-translator-llama-1b](https://huggingface.co/ayushforai/slang-translator-llama-1b)
+This project rewrites **standard or formal English into modern slang** (one direction only: formal → slang, not the reverse). It combines a **QLoRA–fine-tuned Llama 3.2 1B Instruct** adapter with a **Flask** web UI, optional **formality detection**, and **fallback** paths (CSV nearest-neighbor + lexical rules) when the LLM cannot load or copies the input.
 
-## Method
+**Live app:** [ayushforai/slang-translator-web](https://huggingface.co/spaces/ayushforai/slang-translator-web)  
+**Adapter on Hugging Face:** [ayushforai/slang-translator-llama-1b](https://huggingface.co/ayushforai/slang-translator-llama-1b)
 
-1. Parallel pairs: formal sentence ↔ slang/casual sentence.
-2. Light cleaning that **keeps contractions and slang** on the target side.
-3. Llama 3.2 instruct chat template (`Rewrite this in slang:`).
-4. **QLoRA** SFT of `meta-llama/Llama-3.2-1B-Instruct` (LoRA rank 16 on attention + MLP).
-5. Inference uses the chat template. If the model copies the input, a **lexical slang fallback** still shifts register.
-6. Optional **TF-IDF + logistic regression** formality detector (routing for a future two-way model; the product always rewrites **toward slang**).
+## Technologies used
+
+| Area | Stack |
+|------|--------|
+| **Model** | `meta-llama/Llama-3.2-1B-Instruct`, PEFT LoRA, 4-bit QLoRA (GPU training) |
+| **Training** | Hugging Face `transformers`, `trl` (SFT), `datasets`, `accelerate`, `bitsandbytes` |
+| **App** | Flask, HTML/CSS/Bootstrap |
+| **Deploy** | Docker, Hugging Face Spaces |
+| **Data & ML utilities** | `pandas`, `scikit-learn` (TF-IDF + logistic formality detector), `joblib` |
+| **Eval** | Custom BLEU / slang-score / copy-rate scripts |
+| **Auth / Hub** | `huggingface_hub`, `python-dotenv` (`HUGGINGFACE_HUB_TOKEN` for gated Llama) |
+
+## Features
+
+- **Instruction-tuned rewriting** via Llama 3.2 chat template (`Rewrite this in slang:`).
+- **LoRA adapter** (~11.27M trainable weights, ~0.91% of base) hosted on the Hub.
+- **Train / val / test splits** from parallel CSVs (office-casual + Gen-Z pair files).
+- **Formality detector** (TF-IDF + logistic regression) for register labels in the UI.
+- **Layered inference fallback:** LLM → corpus match (`fallback_pairs.jsonl`) → regex lexical slang.
+- **CLI:** `prepare`, `train-detector`, `eval-baselines`, `detect`.
+- **Health endpoint** (`/health`) for Space and local checks.
+
+## What users can do
+
+- Type or paste **formal or neutral** sentences and get a **slang/casual rewrite**.
+- Click **example phrases** in the UI to try common inputs.
+- See **output register**, **mode** (`llm`, `corpus`, or `lexical`), and optional **corpus match score**.
+- Run the same flow **locally** (with a valid HF token and enough RAM/CPU or GPU).
+- (Developers) **Prepare data**, **train** the adapter on GPU, **evaluate** baselines, and **deploy** via Docker to Spaces.
+
+## How to run the project
+
+1. **Clone** the repo and create a virtual environment.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
+pip install -r requirements.txt
+```
+
+2. **Configure Hugging Face** (required for Llama + adapter download):
+
+```bash
+copy .env.example .env          # Windows
+# cp .env.example .env
+```
+
+Add your token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). Accept access for [Llama 3.2 1B Instruct](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct).
+
+3. **Prepare data** (splits + `fallback_pairs.jsonl`):
+
+```bash
+python -m slang_translator.cli prepare
+python -m slang_translator.cli train-detector
+```
+
+4. **Run the web app:**
+
+```bash
+python app.py
+```
+
+Open **http://localhost:7860** (default port **7860**, overridable with `PORT`).
+
+5. **Optional — train on GPU** (after `prepare`):
+
+```bash
+set HUGGINGFACE_HUB_TOKEN=...   # Windows
+python Deployment/fine_tune.py
+```
+
+See [Training](#training-deploymentfine_tunepy) for Kaggle/Colab notes.
+
+## Live demo video
+
+<!-- Add your demo link or embed here -->
+
+_TODO: link to screen recording (local use + Hugging Face Space)._
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+|--------|----------|
+| **Translate** | `Enter` (with focus in the text area) |
+| **New line in input** | `Shift` + `Enter` |
+
+## The process
+
+1. **Data:** Merge `raw_data_fixed.csv` and Gen-Z CSVs under `Dataa/genz/` into cleaned parallel **formal ↔ slang** pairs (~2.5k unique rows).
+2. **Cleaning:** Light normalization that **preserves contractions and slang** on the target side.
+3. **Formatting:** Build Llama 3.2 instruct prompts; write `train.jsonl`, `val.jsonl`, `test.csv`, and `fallback_pairs.jsonl`.
+4. **Training:** QLoRA SFT on frozen 4-bit Llama 3.2 1B (LoRA rank 16 on attention + MLP); save `final_checkpoint/` and publish adapter to the Hub.
+5. **Inference:** Load base + adapter; generate with chat template; **enforce_slang** + corpus retrieval if output is too close to the input.
+6. **Deploy:** Docker image on Hugging Face Spaces; `HUGGINGFACE_HUB_TOKEN` as a Space secret.
+
+## What I learned
+
+- **Parameter-efficient fine-tuning** (QLoRA) makes a 1B instruct model usable on consumer GPUs without full-weight updates.
+- **Training loss and token accuracy** can look strong while **test BLEU** and human “slanginess” lag—evaluation must be split by metric type.
+- **Gated models and Spaces** need valid tokens in secrets; a bad token forces fallback-only behavior.
+- **Dataset labels** matter: many pairs are “corporate → casual,” not Gen-Z; the model and metrics reflect that ceiling.
+- **Production-minded inference:** lazy model load, CPU-safe `device_map`, and CSV/rule fallbacks keep the demo usable when the LLM fails.
+
+## Overall growth
+
+- End-to-end ownership: **data pipeline → training → eval → Flask UI → Hub adapter → Spaces deploy**.
+- Practiced **honest reporting** (identity BLEU floor, non-LLM fallback BLEU, training vs test metrics).
+- Improved **debugging** across local CPU limits, multi-GPU training pitfalls, and remote runtime logs.
+
+## How can it be improved
+
+- **Richer slang targets** in training data (more Gen-Z, fewer mild paraphrases); retrain and re-evaluate.
+- **GPU Space or Inference Endpoint** for reliable `via llm` latency and fewer OOMs on free CPU.
+- **Stronger retrieval** (embeddings instead of TF-IDF cosine) or a small dual-encoder for fallback.
+- **Human eval** or LLM-as-judge for register/slang quality beyond BLEU.
+- **Optional bidirectional** mode (slang → formal) with a router and reversed pairs—see [Bidirectional (formal ↔ slang)](#bidirectional-formal--slang--not-in-this-product).
+- **Sync Space with GitHub** or a one-command deploy script to avoid manual `hf upload`.
+
+## Evaluation metrics
+
+### Training dynamics (published adapter run, train split — not test BLEU)
+
+Logged in `checkpoint-2106/trainer_state.json`:
+
+| | Start (step 10) | End (step 2100 / 2106) |
+|---|---|---|
+| Cross-entropy loss | 4.75 | 0.267 (−94.4%) |
+| Predictive entropy | 2.80 | 0.273 |
+| Token accuracy | 33.9% | 89.5% |
+
+Adapter: **11.27M** LoRA parameters (**~0.91%** of Llama 3.2 1B). Newer data splits use ~**1,879 / 236 / 236** train/val/test and ~**705** GPU steps (3 epochs, effective batch 8).
+
+### Held-out test split (`Dataa/test.csv`, n = 236)
+
+| Metric | Value | Meaning |
+|--------|-------|---------|
+| Identity corpus BLEU | **25.0** | Copy formal input → reference slang (baseline floor) |
+| Lexical + CSV fallback corpus BLEU | **36.4** | Non-LLM rewrite path vs references |
+| Formality detector (held-out) | **~96.7%** acc / macro-F1 | Formal vs slang **columns** in the corpus (register detection, not generation) |
+
+Reproduce baselines:
+
+```bash
+python -m slang_translator.cli prepare
+python -m slang_translator.cli eval-baselines
+python Scriptss/evaluate.py --lexical-only
+# with GPU + adapter loaded:
+python Scriptss/evaluate.py
+```
+
+**Note:** Report adapter **test BLEU** only after `Scriptss/evaluate.py` with the LoRA loaded. Do not confuse train **loss** with slang quality on new sentences.
+
+---
 
 ## Training (`Deployment/fine_tune.py`)
 
@@ -90,65 +238,23 @@ Hugging Face `Trainer` + TRL `SFTTrainer` write to the console (and to `trainer_
 
 After training completes, the best checkpoint (lowest **`eval_loss`**) is restored when validation is enabled (`load_best_model_at_end=True`, `metric_for_best_model="eval_loss"`), then weights are saved again to **`final_checkpoint/`**.
 
-### Interpreting metrics
+### Interpreting training logs
 
-- **`loss` / `eval_loss`:** Next-token prediction error on the formatted SFT strings. Lower is better. **`eval_loss`** is the honest generalization signal on the held-out val split; do not confuse train **`loss`** with test BLEU.
-- **`mean_token_accuracy`:** Fraction of tokens where the model’s argmax matches the label (mostly on the training batch). High values late in training are normal; they do not prove slang quality on new sentences.
-- **Checkpoints:** Use `final_checkpoint` for inference, or upload that folder to Hugging Face. Intermediate `checkpoint-*` dirs are useful if the session dies before the last step.
+- **`loss` / `eval_loss`:** Next-token prediction error on the formatted SFT strings. Lower is better. **`eval_loss`** is the generalization signal on the val split.
+- **`mean_token_accuracy`:** Argmax match on training batches; high late values are normal but do not prove slang quality on new sentences.
+- **Checkpoints:** Use `final_checkpoint` for inference or Hub upload.
 
 ### Cloud training (Kaggle / Colab)
 
 1. Enable **GPU** and **Internet**.
 2. Store **`HUGGINGFACE_HUB_TOKEN`** in notebook secrets.
-3. Clone this repo, `pip install transformers peft trl datasets accelerate bitsandbytes huggingface_hub`.
+3. Clone this repo, `pip install -r requirements.txt` (or the training subset above).
 4. `python Deployment/fine_tune.py` — expect on the order of **20–60 minutes** on a T4 for ~700 steps.
-
-## Honest metrics (from the published adapter run)
-
-Logged in `checkpoint-2106/trainer_state.json` (train set, not a test BLEU):
-
-| | Start (step 10) | End (step 2100 / 2106) |
-|---|---|---|
-| Cross-entropy loss | 4.75 | 0.267 (−94.4%) |
-| Predictive entropy | 2.80 | 0.273 |
-| Token accuracy | 33.9% | 89.5% |
-
-Adapter size on disk: **11.27M LoRA parameters** (0.91% of Llama 3.2 1B, ~1.24B). Training used 4-bit NF4 when a GPU was available. Do not report 20.9M or 1.3B unless you re-count `print_trainable_parameters()` on a new run.
-
-After changing data or prompts, retrain, then report **test** BLEU and slang-score from:
-
-```bash
-python -m slang_translator.cli prepare
-python -m slang_translator.cli eval-baselines
-python Scriptss/evaluate.py --lexical-only
-# after GPU train:
-python Scriptss/evaluate.py
-```
-
-## Setup
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate    # Windows
-pip install -r requirements.txt
-python -m slang_translator.cli prepare
-python -m slang_translator.cli train-detector
-```
-
-Train: see **[Training](#training-deploymentfine_tunepy)** above (`Deployment/fine_tune.py`).
-
-Run the app:
-
-```bash
-python app.py
-```
-
-Open http://localhost:7860
 
 ## Project layout
 
-- `slang_translator/` — preprocess, prompts, style score, detector, metrics, generation
-- `Dataa/` — raw pairs, cleaned CSV, `train.jsonl` / `val.jsonl` / `test.csv`
+- `slang_translator/` — preprocess, prompts, style score, detector, retrieval fallback, metrics, generation
+- `Dataa/` — raw pairs, cleaned CSV, `train.jsonl` / `val.jsonl` / `test.csv`, `fallback_pairs.jsonl`
 - `Deployment/fine_tune.py` — QLoRA training on **train.jsonl only**
 - `Scriptss/evaluate.py` — test-set BLEU, slang score, copy-rate
 - `app.py` + `templates/index.html` — Flask UI
