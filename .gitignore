@@ -7,3 +7,4 @@ nlpenv/
 *.pyc
 .DS_Store
 model.safetensors
+Notes/
