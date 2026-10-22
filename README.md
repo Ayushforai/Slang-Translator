@@ -37,9 +37,7 @@ This project rewrites **standard or formal English into modern slang**, basicall
 
 ## Live demo video ⏯️
 
-<!-- Add your demo link or embed here -->
-
-_TODO: link to screen recording (local use + Hugging Face Space)._
+[<!-- Add your demo link or embed here -->](https://github.com/user-attachments/assets/88188721-de60-4e85-878c-cf086211c895)
 
 ## How to run the project 📲
 
