@@ -81,7 +81,7 @@ set HUGGINGFACE_HUB_TOKEN=...   # Windows
 python Deployment/fine_tune.py
 ```
 
-See [Training](#training-deploymentfine_tunepy) for Kaggle/Colab notes.
+Full adapter training is aimed at a **cloud GPU** (Colab/Kaggle **T4**): a typical laptop without a CUDA GPU is fine for **prepare**, the **Flask app**, and **CPU inference**, but QLoRA SFT on Llama 1B is impractical locally on CPU and often on GPUs with **under 8 GB VRAM** (hours or OOM). See [Hardware & training time](#hardware--training-time) and [Training](#training-deploymentfine_tunepy).
 
 ## Keyboard shortcuts ⌨️
 
@@ -241,12 +241,27 @@ After training completes, the best checkpoint (lowest **`eval_loss`**) is restor
 - **`mean_token_accuracy`:** Argmax match on training batches; high late values are normal but do not prove slang quality on new sentences.
 - **Checkpoints:** Use `final_checkpoint` for inference or Hub upload.
 
+### Hardware & training time
+
+Rough requirements for this repo’s default recipe (`Deployment/fine_tune.py`: 4-bit base, LoRA rank 16, `per_device_train_batch_size=4`, `gradient_accumulation_steps=2`, ~**705** steps on the current train split):
+
+| Resource | Practical target | Under ~30 min? |
+|----------|------------------|----------------|
+| **GPU VRAM** | **≥16 GB** (e.g. Colab/Kaggle **T4**, 15–16 GB usable) | Yes — published runs finish in about **20–35 minutes** at ~700 steps |
+| **GPU VRAM** | **8–12 GB** (many laptop GPUs) | Often **no** without lowering batch size (1–2) or max length; expect **45+ minutes** or OOM |
+| **GPU** | None (CPU only) | **No** — training can run but wall time is **many hours**, not minutes |
+| **Host RAM** | **≥12 GB** system RAM on the notebook/VM | Recommended for `datasets`, checkpoints, and `paged_adamw_32bit` overhead |
+
+VRAM is what matters most: the frozen **4-bit** 1B weights plus LoRA adapters and a batch of chat-formatted sequences usually sit in roughly **6–10 GB** during training; **16 GB** leaves headroom for validation steps and checkpoint writes. That is why this project was trained on **Google Colab (T4)** rather than on a local machine without a suitable discrete GPU.
+
+To fit a smaller card, edit `Deployment/fine_tune.py` (`per_device_train_batch_size`, and optionally TRL `max_seq_length` if you add it to `SFTTrainer`); keep **effective batch size** at 8 via `gradient_accumulation_steps` if possible.
+
 ### Cloud training (Kaggle / Colab)
 
-1. Enable **GPU** and **Internet**.
+1. Enable **GPU** and **Internet** (T4 or better; **16 GB** class for the default settings).
 2. Store **`HUGGINGFACE_HUB_TOKEN`** in notebook secrets.
 3. Clone this repo, `pip install -r requirements.txt` (or the training subset above).
-4. `python Deployment/fine_tune.py` — expect on the order of **20–60 minutes** on a T4 for ~700 steps.
+4. `python Deployment/fine_tune.py` — about **20–35 minutes** on a T4 for ~700 steps with the default hyperparameters.
 
 ## Project layout
 
