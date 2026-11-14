@@ -21,7 +21,7 @@ This project rewrites **standard or formal English into modern slang**, basicall
 
 - **Instruction-tuned rewriting** via Llama 3.2 chat template (`Rewrite this in slang:`).
 - **LoRA adapter** (~11.27M trainable weights, ~0.91% of base) hosted on the Hub.
-- **Train / val / test splits** from parallel CSVs (office-casual + Gen-Z pair files).
+- **Train / val / test splits** from every parallel CSV under `Dataa/` (deduped; skips generated `cleaned_data.csv` / `test.csv`).
 - **Formality detector** (TF-IDF + logistic regression) for register labels in the UI.
 - **Layered inference fallback:** LLM → corpus match (`fallback_pairs.jsonl`) → regex lexical slang.
 - **CLI:** `prepare`, `train-detector`, `eval-baselines`, `detect`.
@@ -92,7 +92,7 @@ See [Training](#training-deploymentfine_tunepy) for Kaggle/Colab notes.
 
 ## The process 🔀
 
-1. **Data:** Merge `raw_data_fixed.csv` and Gen-Z CSVs under `Dataa/genz/` into cleaned parallel **formal ↔ slang** pairs (~2.5k unique rows).
+1. **Data:** Discover all `*.csv` under `Dataa/` with formal/slang columns (`raw_data_fixed.csv`, `Dataa/genz/*.csv`, and any other pair files). Skip `cleaned_data.csv` and `test.csv`. Merge and dedupe into ~**2.5k** unique rows.
 2. **Cleaning:** Light normalization that **preserves contractions and slang** on the target side.
 3. **Formatting:** Build Llama 3.2 instruct prompts; write `train.jsonl`, `val.jsonl`, `test.csv`, and `fallback_pairs.jsonl`.
 4. **Training:** QLoRA SFT on frozen 4-bit Llama 3.2 1B (LoRA rank 16 on attention + MLP); save `final_checkpoint/` and publish adapter to the Hub.
@@ -142,6 +142,9 @@ Adapter: **11.27M** LoRA parameters (**~0.91%** of Llama 3.2 1B). Newer data spl
 |--------|-------|---------|
 | Identity corpus BLEU | **25.0** | Copy formal input → reference slang (baseline floor) |
 | Lexical + CSV fallback corpus BLEU | **36.4** | Non-LLM rewrite path vs references |
+| **LoRA adapter** corpus BLEU | **47.2** | `Scriptss/evaluate.py` with Hub/local adapter (`Dataa/eval_adapter_test.json`) |
+| Adapter mean slang score (hyp) | **0.232** | Heuristic “slanginess” on model outputs vs source **0.060** / ref **0.227** |
+| Adapter copy rate | **0%** | Fraction of outputs identical to formal input |
 | Formality detector (held-out) | **~96.7%** acc / macro-F1 | Formal vs slang **columns** in the corpus (register detection, not generation) |
 
 Reproduce baselines:
@@ -150,11 +153,15 @@ Reproduce baselines:
 python -m slang_translator.cli prepare
 python -m slang_translator.cli eval-baselines
 python Scriptss/evaluate.py --lexical-only
-# with GPU + adapter loaded:
+# GPU + default Hub adapter:
 python Scriptss/evaluate.py
+# local checkpoint or alternate Hub repo:
+python Scriptss/evaluate.py --adapter models/slang_translator_llama_1b/final_checkpoint
 ```
 
-**Note:** Report adapter **test BLEU** only after `Scriptss/evaluate.py` with the LoRA loaded. Do not confuse train **loss** with slang quality on new sentences.
+`Scriptss/evaluate.py` writes metrics to stdout; save a snapshot as `Dataa/eval_adapter_test.json` after a run if you want a pinned report in the repo.
+
+**Note:** Do not confuse train **loss** / token accuracy with test BLEU or slang score on new sentences.
 
 ---
 
@@ -177,17 +184,21 @@ Run after `python -m slang_translator.cli prepare`:
 ```bash
 set HUGGINGFACE_HUB_TOKEN=...   # Windows
 python Deployment/fine_tune.py
+# same entrypoint from legacy path:
+python Scriptss/fine_tune.py
 ```
 
 Recommended: **one GPU** with CUDA (Kaggle T4, Colab T4). CPU training is possible but very slow. On Kaggle **T4 x2**, the script pins **`CUDA_VISIBLE_DEVICES=0`** and uses `device_map={"": 0}` so the model stays on a single GPU (multi-GPU + `device_map="auto"` breaks the Trainer).
 
+**Colab / T4 precision:** On T4-class GPUs the script loads 4-bit weights with **fp16** compute and disables Trainer **bf16/fp16 AMP** (avoids `NotImplementedError` for BFloat16 at step 0). Set `FORCE_FP16=1` to force that path on other GPUs. Ampere+ GPUs use **bf16** when supported. `TrainingArguments` kwargs are filtered for older `transformers` builds (e.g. `evaluation_strategy` vs `eval_strategy`, `warmup_steps` vs `warmup_ratio`).
+
 ### QLoRA and LoRA settings
 
-- **Quantization (GPU only):** 4-bit **NF4**, `bnb_4bit_compute_dtype=bfloat16`, double quant enabled.
+- **Quantization (GPU only):** 4-bit **NF4**, `bnb_4bit_compute_dtype` = **bf16** or **fp16** (GPU-dependent; see above), double quant enabled.
 - **LoRA:** `r=16`, `lora_alpha=32`, `lora_dropout=0.05`, `bias="none"`.
 - **Target modules:** `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`.
 - **Optimizer:** `paged_adamw_32bit` on GPU; `adamw_torch` on CPU.
-- **Precision:** `bf16` when the GPU supports it; no fp16.
+- **Precision:** `bf16` Trainer flag on capable GPUs; **fp16 load / AMP off** on T4 (Colab); CPU uses fp32.
 
 ### Hyperparameters
 
@@ -200,7 +211,7 @@ Recommended: **one GPU** with CUDA (Kaggle T4, Colab T4). CPU training is possib
 | **Effective batch size** | **8** | **2** |
 | Learning rate | `2e-4` | `2e-4` |
 | LR schedule | cosine | cosine |
-| Warmup | 3% of steps (`warmup_ratio=0.03`) | same |
+| Warmup | 3% of total steps (`warmup_steps`, or `warmup_ratio` on older Trainer) | same |
 | Weight decay | 0.01 | 0.01 |
 | Max grad norm | 0.3 | 0.3 |
 
@@ -240,9 +251,10 @@ After training completes, the best checkpoint (lowest **`eval_loss`**) is restor
 ## Project layout
 
 - `slang_translator/` — preprocess, prompts, style score, detector, retrieval fallback, metrics, generation
-- `Dataa/` — raw pairs, cleaned CSV, `train.jsonl` / `val.jsonl` / `test.csv`, `fallback_pairs.jsonl`
-- `Deployment/fine_tune.py` — QLoRA training on **train.jsonl only**
-- `Scriptss/evaluate.py` — test-set BLEU, slang score, copy-rate
+- `Dataa/` — parallel CSVs (any under this tree with formal/slang columns), `cleaned_data.csv`, splits, `fallback_pairs.jsonl`, `eval_adapter_test.json`
+- `Deployment/fine_tune.py` — canonical QLoRA training on **train.jsonl**
+- `Scriptss/fine_tune.py` — thin wrapper that runs `Deployment/fine_tune.py`
+- `Scriptss/evaluate.py` — test-set BLEU, slang score, copy-rate (`--adapter` optional)
 - `app.py` + `templates/index.html` — Flask UI
 
 ## Bidirectional (formal ↔ slang) — not in this product
