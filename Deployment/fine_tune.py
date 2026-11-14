@@ -1,5 +1,7 @@
 """Deployment QLoRA training: Llama 3.2 1B, formal → slang only."""
 
+import inspect
+import math
 import os
 import sys
 from pathlib import Path
@@ -32,13 +34,59 @@ if hf_token:
     login(token=hf_token)
 
 
+def _mixed_precision() -> tuple:
+    """Return (compute_dtype, use_bf16, use_fp16).
+
+    T4 on Colab: use float16 for 4-bit matmuls but **no** Trainer AMP (bf16/fp16
+    grad scaler can crash at step 0 with NotImplementedError for BFloat16).
+    """
+    if not torch.cuda.is_available():
+        return torch.float32, False, False
+    gpu = torch.cuda.get_device_name(0).upper()
+    fp16_gpus = ("T4", "TESLA T4", "GTX", "1650", "1660", "1070", "1080", "P100", "K80")
+    force_fp16 = os.getenv("FORCE_FP16", "").lower() in ("1", "true", "yes")
+    if force_fp16 or any(tag in gpu for tag in fp16_gpus):
+        return torch.float16, False, False
+    if torch.cuda.is_bf16_supported():
+        return torch.bfloat16, True, False
+    return torch.float16, False, True
+
+
+def _training_arguments(total_steps: int, **kwargs):
+    """Build TrainingArguments across Colab / local transformers version differences."""
+    params = set(inspect.signature(TrainingArguments.__init__).parameters) - {"self"}
+
+    if "eval_strategy" in kwargs and "eval_strategy" not in params and "evaluation_strategy" in params:
+        kwargs["evaluation_strategy"] = kwargs.pop("eval_strategy")
+
+    ws = kwargs.get("warmup_steps")
+    if ws is not None:
+        if "warmup_steps" not in params and "warmup_ratio" in params and total_steps > 0:
+            kwargs.pop("warmup_steps", None)
+            kwargs["warmup_ratio"] = min(1.0, ws / total_steps)
+        elif "warmup_steps" in params:
+            kwargs["warmup_steps"] = ws
+        else:
+            kwargs.pop("warmup_steps", None)
+    kwargs.pop("warmup_ratio", None)
+
+    allowed = {k: v for k, v in kwargs.items() if k in params and v is not None}
+    return TrainingArguments(**allowed)
+
+
 def main():
     if not TRAIN_PATH.is_file():
         raise SystemExit("Missing Dataa/train.jsonl. Run: python -m slang_translator.cli prepare")
 
+    print(f"Using fine_tune script: {Path(__file__).resolve()}")
+
     use_gpu = torch.cuda.is_available()
+    compute_dtype, use_bf16, use_fp16 = _mixed_precision()
     if use_gpu:
-        print(f"GPU available: {torch.cuda.get_device_name(0)} (using cuda:0 only)")
+        print(
+            f"GPU available: {torch.cuda.get_device_name(0)} (using cuda:0 only, "
+            f"dtype={'bf16' if use_bf16 else 'fp16' if use_fp16 else 'fp16-load/amp-off' if compute_dtype == torch.float16 else 'fp32'})"
+        )
     else:
         print("GPU available: False")
 
@@ -47,7 +95,7 @@ def main():
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_compute_dtype=compute_dtype,
             bnb_4bit_use_double_quant=True,
         )
 
@@ -70,7 +118,7 @@ def main():
         quantization_config=bnb_config,
         device_map={"": 0} if use_gpu else None,
         token=hf_token,
-        torch_dtype=torch.bfloat16 if use_gpu else torch.float32,
+        torch_dtype=compute_dtype,
     )
     model.config.use_cache = False
 
@@ -83,27 +131,37 @@ def main():
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    training_arguments = TrainingArguments(
+    train_bs = 4 if use_gpu else 1
+    grad_accum = 2
+    epochs = 3
+    train_n = len(dataset["train"])
+    steps_per_epoch = max(1, math.ceil(train_n / (train_bs * grad_accum)))
+    total_steps = steps_per_epoch * epochs
+    warmup_steps = max(1, int(total_steps * 0.03))
+
+    has_val = "validation" in dataset
+    training_arguments = _training_arguments(
+        total_steps,
         output_dir=str(OUTPUT_DIR),
-        num_train_epochs=3,
-        per_device_train_batch_size=4 if use_gpu else 1,
-        per_device_eval_batch_size=4 if use_gpu else 1,
-        gradient_accumulation_steps=2,
-        eval_strategy="steps" if "validation" in dataset else "no",
-        eval_steps=100 if "validation" in dataset else None,
+        num_train_epochs=epochs,
+        per_device_train_batch_size=train_bs,
+        per_device_eval_batch_size=train_bs,
+        gradient_accumulation_steps=grad_accum,
+        eval_strategy="steps" if has_val else "no",
+        eval_steps=100 if has_val else None,
         save_steps=100,
         logging_steps=10,
         learning_rate=2e-4,
         weight_decay=0.01,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         max_grad_norm=0.3,
-        bf16=use_gpu and torch.cuda.is_bf16_supported(),
-        fp16=False,
+        bf16=use_bf16,
+        fp16=use_fp16,
         optim="paged_adamw_32bit" if use_gpu else "adamw_torch",
         report_to="none",
-        load_best_model_at_end=bool("validation" in dataset),
-        metric_for_best_model="eval_loss" if "validation" in dataset else None,
+        load_best_model_at_end=has_val,
+        metric_for_best_model="eval_loss" if has_val else None,
     )
 
     trainer_kwargs = dict(

@@ -19,6 +19,11 @@ from slang_translator.style import enforce_slang, jaccard, slang_score
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--lexical-only", action="store_true", help="Do not load the LLM")
+    parser.add_argument(
+        "--adapter",
+        default="",
+        help="Local adapter dir or Hub repo. Default: Hub adapter in config.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
@@ -32,7 +37,10 @@ def main():
     else:
         from slang_translator.engine import SlangEngine
 
-        engine = SlangEngine(require_adapter=True)
+        engine = SlangEngine(
+            adapter=args.adapter or None,
+            require_adapter=True,
+        )
         hyps = [engine.generate(f) for f in df["formal"]]
 
     pairs = list(zip(hyps, df["slang"]))

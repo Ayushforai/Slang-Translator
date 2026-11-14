@@ -1,0 +1,37 @@
+{
+  "n": 236,
+  "corpus_bleu_vs_reference": 47.21749729667163,
+  "mean_sentence_bleu_vs_reference": 46.27460887759093,
+  "mean_hypothesis_slang_score": 0.23172732399427315,
+  "mean_source_slang_score": 0.05964315228086414,
+  "mean_reference_slang_score": 0.22717397950448798,
+  "mean_jaccard_to_source": 0.4020200430258086,
+  "copy_rate": 0.0,
+  "examples": [
+    {
+      "src": "I'm very busy.",
+      "hyp": "I'm really hectic.",
+      "ref": "I'm swamped."
+    },
+    {
+      "src": "Could you assist with the project follow-up",
+      "hyp": "Can you assist with the project follow-up",
+      "ref": "Help with project follow-up"
+    },
+    {
+      "src": "I'm really tired today, so I just want to relax and watch some TV.",
+      "hyp": "I'm hella drained today, so I just wanna chill and binge some shows.",
+      "ref": "I'm really tired today, so I just wanna relax and watch some TV."
+    },
+    {
+      "src": "We must maintain high-quality standards",
+      "hyp": "Keep high standards",
+      "ref": "Keep quality high"
+    },
+    {
+      "src": "I'm just excited to hang out with my friends today.",
+      "hyp": "I'm just vibing with my friends today, no cap.",
+      "ref": "I'm so hyped to chill with my squad today."
+    }
+  ]
+}
